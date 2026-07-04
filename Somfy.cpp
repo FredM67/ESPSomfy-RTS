@@ -1267,13 +1267,18 @@ void SomfyShade::triggerGPIOs(somfy_frame_t &frame)
 }
 void SomfyShade::computeAlphas()
 {
-  // Solve for alphaDown: given r = downMidTime/downTime, find α > 1 such that
+  // Solve for alphaDown: given r = downMidTime/descendTime, find α > 1 such that
   //   ln(2α/(α+1)) = r * ln(α)
   // i.e. f(α) = ln(2) + (1-r)*ln(α) - ln(α+1) = 0
   // Newton's method, 10 iterations from α₀ = 2.0
-  if (this->downMidTime > 0 && this->downMidTime < this->downTime)
+  // descendTime = user-measured timestamp from fully open to floor touch (blades horizontal)
+  // Tilt duration (blade closing) = downTime - descendTime (derived internally)
+  uint32_t descentTime = (this->descendTime > 0 && this->descendTime < this->downTime)
+                           ? this->descendTime
+                           : this->downTime;
+  if (this->downMidTime > 0 && this->downMidTime < descentTime)
   {
-    float r = (float)this->downMidTime / (float)this->downTime;
+    float r = (float)this->downMidTime / (float)descentTime;
     float a = 2.0f;
     for (uint8_t i = 0; i < 10; i++)
     {
@@ -1293,12 +1298,22 @@ void SomfyShade::computeAlphas()
     this->alphaDown = 0.0f;
   }
 
-  // Solve for alphaUp: given r = upMidTime/upTime, find α > 1 such that
+  // Solve for alphaUp: given r = (upMidTime-upSlatTime)/ascentTime, find α > 1 such that
   //   ln((α+1)/2) = r * ln(α)
   // i.e. f(α) = ln(α+1) - ln(2) - r*ln(α) = 0
-  if (this->upMidTime > 0 && this->upMidTime < this->upTime)
+  // upMidTime = timestamp from fully closed to 50% (user-measured from t=0)
+  // upSlatTime = timestamp from fully closed to blades expanded (user-measured from t=0)
+  // ascentTime = upTime - upSlatTime (pure ascent duration, excludes blade-open phase)
+  // r uses the time within the ascent phase only: upMidTime - upSlatTime
+  uint32_t ascentTime = (this->upSlatTime > 0 && this->upSlatTime < this->upTime)
+                          ? this->upTime - this->upSlatTime
+                          : this->upTime;
+  uint32_t upMidOffset = (this->upSlatTime > 0 && this->upMidTime > this->upSlatTime)
+                           ? this->upMidTime - this->upSlatTime
+                           : this->upMidTime;
+  if (upMidOffset > 0 && upMidOffset < ascentTime)
   {
-    float r = (float)this->upMidTime / (float)this->upTime;
+    float r = (float)upMidOffset / (float)ascentTime;
     float a = 2.0f;
     for (uint8_t i = 0; i < 10; i++)
     {
@@ -1404,21 +1419,39 @@ void SomfyShade::checkMovement()
       // The starting posion is a float value from 0-1 that indicates how much the shade is open. So
       // if we take the starting position * the total down time then this will tell us how many ms it
       // has moved in the down position.
+      //
+      // Two-phase model when descendTime > 0:
+      //   Phase 1 (descent): position 0..99% over descendTime ms — non-linear
+      //   Phase 2 (blade tilt): position 99..100% over (downTime - descendTime) ms — linear
       int32_t msFrom0;
       float aDown = this->alphaDown;
-      if (aDown > 1.0f)
+      bool hasSlatDown = (this->descendTime > 0 && this->descendTime < downTime);
+      int32_t descentDur = hasSlatDown ? (int32_t)this->descendTime : (int32_t)downTime;
+      int32_t tiltDur = hasSlatDown ? (int32_t)(downTime - this->descendTime) : 0;
+
+      if (hasSlatDown && this->startPos >= 99.0f)
+      {
+        // Starting in blade-tilt phase: linear offset within last 1%
+        float t0 = (this->startPos - 99.0f) / 1.0f * (float)tiltDur;
+        msFrom0 = (int32_t)(t0 + (float)(curTime - this->moveStart));
+        msFrom0 += descentDur; // offset so msFrom0 > descentDur means tilt phase
+      }
+      else if (aDown > 1.0f)
       {
         float lna = log(aDown);
-        float arg = 1.0f - this->startPos * (aDown - 1.0f) / (100.0f * aDown);
-        float t0 = -(float)downTime / lna * log(arg);
+        // Inverse of descent curve scaled to 0..99%
+        float sPos = hasSlatDown ? this->startPos / 99.0f * 100.0f : this->startPos;
+        float arg = 1.0f - sPos * (aDown - 1.0f) / (100.0f * aDown);
+        float t0 = -(float)descentDur / lna * log(arg);
         msFrom0 = (int32_t)(t0 + (float)(curTime - this->moveStart));
       }
       else
       {
-        msFrom0 = (int32_t)floor((this->startPos / 100) * downTime) + (int32_t)(curTime - this->moveStart);
+        float sPos = hasSlatDown ? this->startPos / 99.0f * 100.0f : this->startPos;
+        msFrom0 = (int32_t)floor((sPos / 100.0f) * (float)descentDur) + (int32_t)(curTime - this->moveStart);
       }
-      msFrom0 = min(downTime, msFrom0);
-      if (msFrom0 >= downTime)
+      msFrom0 = min((int32_t)downTime, msFrom0);
+      if (msFrom0 >= (int32_t)downTime)
       {
         this->p_currentPos(100.0f);
         // this->p_direction(0);
@@ -1426,14 +1459,21 @@ void SomfyShade::checkMovement()
       else
       {
         float fpos;
-        if (aDown > 1.0f)
+        if (hasSlatDown && msFrom0 >= descentDur)
+        {
+          // Blade-tilt phase: linear 99..100%
+          fpos = 99.0f + (float)(msFrom0 - descentDur) / (float)tiltDur * 1.0f;
+        }
+        else if (aDown > 1.0f)
         {
           float lna = log(aDown);
-          fpos = 100.0f * aDown / (aDown - 1.0f) * (1.0f - exp(-(float)msFrom0 * lna / (float)downTime));
+          float raw = 100.0f * aDown / (aDown - 1.0f) * (1.0f - exp(-(float)msFrom0 * lna / (float)descentDur));
+          fpos = hasSlatDown ? raw * 99.0f / 100.0f : raw;
         }
         else
         {
-          fpos = (float)msFrom0 / (float)downTime * 100.0f;
+          float raw = (float)msFrom0 / (float)descentDur * 100.0f;
+          fpos = hasSlatDown ? raw * 99.0f / 100.0f : raw;
         }
         this->p_currentPos(min(max(fpos, 0.0f), 100.0f));
         if (this->currentPos >= 100)
@@ -1483,21 +1523,40 @@ void SomfyShade::checkMovement()
       // often move slower in the up position so since we are using a relative position the up time
       // can be calculated.
       // 10000ms from 100 to 0;
+      //
+      // Two-phase model when upSlatTime > 0:
+      //   Phase 1 (blade open): position 100..99% over upSlatTime ms — linear
+      //   Phase 2 (ascent): position 99..0% over (upTime - upSlatTime) ms — non-linear
       int32_t msFrom100;
       float aUp = this->alphaUp;
-      if (aUp > 1.0f)
+      bool hasSlatUp = (this->upSlatTime > 0 && this->upSlatTime < upTime);
+      int32_t ascentDur = hasSlatUp ? (int32_t)(upTime - this->upSlatTime) : (int32_t)upTime;
+
+      if (hasSlatUp && this->startPos >= 99.0f)
+      {
+        // Starting in blade-open phase: linear within 99..100%
+        float t0 = (100.0f - this->startPos) / 1.0f * (float)this->upSlatTime;
+        msFrom100 = (int32_t)(t0 + (float)(curTime - this->moveStart));
+      }
+      else if (aUp > 1.0f)
       {
         float lna = log(aUp);
-        float arg = aUp - this->startPos * (aUp - 1.0f) / 100.0f;
-        float t0 = (float)upTime * log(arg) / lna;
+        // Inverse of ascent curve scaled to 99..0%
+        float sPos = hasSlatUp ? this->startPos / 99.0f * 100.0f : this->startPos;
+        float arg = aUp - sPos * (aUp - 1.0f) / 100.0f;
+        float t0 = (float)ascentDur * log(arg) / lna;
         msFrom100 = (int32_t)(t0 + (float)(curTime - this->moveStart));
+        if (hasSlatUp) msFrom100 += (int32_t)this->upSlatTime;
       }
       else
       {
-        msFrom100 = upTime - (int32_t)floor((this->startPos / 100) * upTime) + (int32_t)(curTime - this->moveStart);
+        float sPos = hasSlatUp ? this->startPos / 99.0f * 100.0f : this->startPos;
+        int32_t t0 = (int32_t)ascentDur - (int32_t)floor((sPos / 100.0f) * (float)ascentDur);
+        msFrom100 = t0 + (int32_t)(curTime - this->moveStart);
+        if (hasSlatUp) msFrom100 += (int32_t)this->upSlatTime;
       }
-      msFrom100 = min(upTime, msFrom100);
-      if (msFrom100 >= upTime)
+      msFrom100 = min((int32_t)upTime, msFrom100);
+      if (msFrom100 >= (int32_t)upTime)
       {
         this->p_currentPos(0.0f);
         // this->p_direction(0);
@@ -1505,14 +1564,25 @@ void SomfyShade::checkMovement()
       else
       {
         float fpos;
-        if (aUp > 1.0f)
+        if (hasSlatUp && msFrom100 < (int32_t)this->upSlatTime)
         {
-          float lna = log(aUp);
-          fpos = 100.0f / (aUp - 1.0f) * (aUp - exp((float)msFrom100 * lna / (float)upTime));
+          // Blade-open phase: linear 100..99%
+          fpos = 100.0f - (float)msFrom100 / (float)this->upSlatTime * 1.0f;
         }
         else
         {
-          fpos = (1.0f - (float)msFrom100 / (float)upTime) * 100.0f;
+          int32_t tAscent = hasSlatUp ? msFrom100 - (int32_t)this->upSlatTime : msFrom100;
+          if (aUp > 1.0f)
+          {
+            float lna = log(aUp);
+            float raw = 100.0f / (aUp - 1.0f) * (aUp - exp((float)tAscent * lna / (float)ascentDur));
+            fpos = hasSlatUp ? raw * 99.0f / 100.0f : raw;
+          }
+          else
+          {
+            float raw = (1.0f - (float)tAscent / (float)ascentDur) * 100.0f;
+            fpos = hasSlatUp ? raw * 99.0f / 100.0f : raw;
+          }
         }
         fpos = min(max(fpos, 0.0f), 100.0f);
         if (fpos <= 0.0f)
@@ -1752,6 +1822,8 @@ void SomfyShade::load()
   }
   this->upMidTime = pref.getUInt("upMidTime", 0);
   this->downMidTime = pref.getUInt("downMidTime", 0);
+  this->descendTime = pref.getUInt("descendTime", 0);
+  this->upSlatTime = pref.getUInt("upSlatTime", 0);
   this->computeAlphas();
 
   this->setRemoteAddress(pref.getUInt("remoteAddress", 0));
@@ -3810,6 +3882,8 @@ bool SomfyShade::save()
     pref.putUInt("tiltTime", this->tiltTime);
     pref.putUInt("upMidTime", this->upMidTime);
     pref.putUInt("downMidTime", this->downMidTime);
+    pref.putUInt("descendTime", this->descendTime);
+    pref.putUInt("upSlatTime", this->upSlatTime);
     pref.putFloat("currentPos", this->currentPos);
     pref.putFloat("currentTiltPos", this->currentTiltPos);
     pref.putUShort("myPos", this->myPos);
@@ -3986,8 +4060,13 @@ int8_t SomfyShade::fromJSON(JsonObject &obj)
       this->upMidTime = obj["upMidTime"];
     if (obj.containsKey("downMidTime"))
       this->downMidTime = obj["downMidTime"];
+    if (obj.containsKey("descendTime"))
+      this->descendTime = obj["descendTime"];
+    if (obj.containsKey("upSlatTime"))
+      this->upSlatTime = obj["upSlatTime"];
     if (obj.containsKey("upMidTime") || obj.containsKey("downMidTime") ||
-        obj.containsKey("upTime") || obj.containsKey("downTime"))
+        obj.containsKey("upTime") || obj.containsKey("downTime") ||
+        obj.containsKey("descendTime") || obj.containsKey("upSlatTime"))
       this->computeAlphas();
     if (obj.containsKey("remoteAddress"))
       this->setRemoteAddress(obj["remoteAddress"]);
@@ -4137,6 +4216,8 @@ void SomfyShade::toJSON(JsonResponse &json)
   json.addElem("downTime", (uint32_t)this->downTime);
   json.addElem("upMidTime", (uint32_t)this->upMidTime);
   json.addElem("downMidTime", (uint32_t)this->downMidTime);
+  json.addElem("descendTime", (uint32_t)this->descendTime);
+  json.addElem("upSlatTime", (uint32_t)this->upSlatTime);
   json.addElem("paired", this->paired);
   json.addElem("lastRollingCode", (uint32_t)this->lastRollingCode);
   json.addElem("position", this->transformPosition(this->currentPos));

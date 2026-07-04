@@ -687,6 +687,19 @@
                                         style="width:100%;text-align:right;" />
                                     <label for="fldShadeDownMidTime">50% Down Time (ms)</label>
                                 </div>
+                                <div class="field-group"
+                                    style="display:inline-block;width:40%;margin-right:10px;margin-top:-10px;">
+                                    <input id="fldShadeUpSlatTime" name="shadeUpSlatTime" data-bind="upSlatTime"
+                                        data-datatype="int" type="number" length=5 placeholder="optional"
+                                        style="width:100%;text-align:right;" />
+                                    <label for="fldShadeUpSlatTime">Blades Open At (ms)</label>
+                                </div>
+                                <div class="field-group" style="display:inline-block;width:40%;">
+                                    <input id="fldShadeDescendTime" name="shadeDescendTime" type="number"
+                                        data-bind="descendTime" data-datatype="int" length=5 placeholder="optional"
+                                        style="width:100%;text-align:right;" />
+                                    <label for="fldShadeDescendTime">Bottom Touch At (ms)</label>
+                                </div>
                             </div>
                             <div id="divTiltSettings" style="display:none;margin-top:-10px;">
                                 <div class="field-group"
