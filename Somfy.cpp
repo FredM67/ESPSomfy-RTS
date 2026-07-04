@@ -3833,6 +3833,10 @@ void SomfyShade::moveToTarget(float pos, float tilt)
       cmd = somfy_commands::Up;
     else if (pos > this->currentPos)
       cmd = somfy_commands::Down;
+    else if (pos == 0.0f)
+      cmd = somfy_commands::Up;    // Hard stop: always send to allow position recalibration
+    else if (pos == 100.0f)
+      cmd = somfy_commands::Down;  // Hard stop: always send to allow position recalibration
     else if (tilt >= 0 && tilt < this->currentTiltPos)
       cmd = somfy_commands::Up;
     else if (tilt >= 0 && tilt > this->currentTiltPos)
