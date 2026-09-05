@@ -44,7 +44,7 @@ jobs:
 
       - name: Create LittleFS
         run: |
-          ./mklittlefs/mklittlefs --create data --size 1441792 SomfyController.littlefs.bin
+          ./mklittlefs/mklittlefs --create data --size 786432 SomfyController.littlefs.bin
 
       - name: Upload binaries
         uses: actions/upload-artifact@v3
@@ -65,22 +65,22 @@ jobs:
           - board: esp32
             addr_bootloader: 0x1000
             chip: ESP32
-            fqbn: esp32:esp32:esp32
+            fqbn: esp32:esp32:esp32:PartitionScheme=custom
             name: ESP32
           - board: lolin_c3_mini
             addr_bootloader: 0x0
             chip: ESP32-C3
-            fqbn: esp32:esp32:lolin_c3_mini
+            fqbn: esp32:esp32:lolin_c3_mini:PartitionScheme=custom
             name: LOLIN-C3-mini
           - board: lolin_s2_mini
             addr_bootloader: 0x1000
             chip: ESP32-S2
-            fqbn: esp32:esp32:lolin_s2_mini
+            fqbn: esp32:esp32:lolin_s2_mini:PartitionScheme=custom
             name: LOLIN-S2-mini
           - board: lolin_s3_mini
             addr_bootloader: 0x0
             chip: ESP32-S3
-            fqbn: esp32:esp32:lolin_s3_mini
+            fqbn: esp32:esp32:lolin_s3_mini:PartitionScheme=custom
             name: LOLIN-S3-mini
 
     steps:
@@ -137,7 +137,7 @@ jobs:
             ${{ matrix.addr_bootloader }} build/SomfyController.ino.bootloader.bin \
             0x8000 build/SomfyController.ino.partitions.bin \
             0x10000 build/SomfyController.ino.bin \
-            0x290000 SomfyController.littlefs.bin
+            0x330000 SomfyController.littlefs.bin
 
       - name: Upload ${{ matrix.name }}
         uses: actions/upload-artifact@v3
