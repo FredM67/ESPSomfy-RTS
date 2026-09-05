@@ -5,7 +5,7 @@ on: [push, pull_request]
 env:
   ARDUINO_BOARD_MANAGER_ADDITIONAL_URLS: "https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_dev_index.json"
   ARDUINO_CLI_VERSION: "0.x"
-  ARDUINO_ESP32_VERSION: "2.0.17"
+  ARDUINO_ESP32_VERSION: "2.0.10"
   ARDUINO_JSON_VERSION: "6.21.3"
   ESPTOOL_VERSION: "4.6"
   LITTLEFS_VERSION: "v2.5.1"
@@ -65,22 +65,22 @@ jobs:
           - board: esp32
             addr_bootloader: 0x1000
             chip: ESP32
-            fqbn: esp32:esp32:esp32:PartitionScheme=custom
+            fqbn: esp32:esp32:esp32
             name: ESP32
           - board: lolin_c3_mini
             addr_bootloader: 0x0
             chip: ESP32-C3
-            fqbn: esp32:esp32:lolin_c3_mini:PartitionScheme=custom
+            fqbn: esp32:esp32:lolin_c3_mini
             name: LOLIN-C3-mini
           - board: lolin_s2_mini
             addr_bootloader: 0x1000
             chip: ESP32-S2
-            fqbn: esp32:esp32:lolin_s2_mini:PartitionScheme=custom
+            fqbn: esp32:esp32:lolin_s2_mini
             name: LOLIN-S2-mini
           - board: lolin_s3_mini
             addr_bootloader: 0x0
             chip: ESP32-S3
-            fqbn: esp32:esp32:lolin_s3_mini:PartitionScheme=custom
+            fqbn: esp32:esp32:lolin_s3_mini
             name: LOLIN-S3-mini
 
     steps:
