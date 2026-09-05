@@ -4548,7 +4548,7 @@ uint8_t SomfyShadeController::getNextShadeId()
 {
   // There is no shortcut for this since the deletion of
   // a shade in the middle makes all of this very difficult.
-  for (uint8_t i = 1; i < SOMFY_MAX_SHADES - 1; i++)
+  for (uint8_t i = 1; i <= SOMFY_MAX_SHADES; i++)
   {
     bool id_exists = false;
     for (uint8_t j = 0; j < SOMFY_MAX_SHADES; j++)
@@ -4599,7 +4599,7 @@ uint8_t SomfyShadeController::getNextGroupId()
 {
   // There is no shortcut for this since the deletion of
   // a group in the middle makes all of this very difficult.
-  for (uint8_t i = 1; i < SOMFY_MAX_GROUPS - 1; i++)
+  for (uint8_t i = 1; i <= SOMFY_MAX_GROUPS; i++)
   {
     bool id_exists = false;
     for (uint8_t j = 0; j < SOMFY_MAX_GROUPS; j++)
